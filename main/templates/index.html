@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="UTF-8">
+<title>Rating likvidity krajů</title>
+<style>
+    :root {
+        --bg: #f5f6f8;
+        --card-bg: #ffffff;
+        --text: #1f2430;
+        --muted: #6b7280;
+        --accent: #2f6feb;
+        --accent-hover: #2557c4;
+        --border: #dde1e7;
+        --error-bg: #fdecec;
+        --error-border: #f3b4b4;
+        --error-text: #9a1c1c;
+    }
+    * { box-sizing: border-box; }
+    body {
+        margin: 0;
+        font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+        background: var(--bg);
+        color: var(--text);
+        display: flex;
+        justify-content: center;
+        padding: 48px 16px;
+    }
+    .card {
+        background: var(--card-bg);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 32px;
+        max-width: 620px;
+        width: 100%;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    }
+    h1 {
+        font-size: 1.4rem;
+        margin: 0 0 8px;
+    }
+    p.lead {
+        color: var(--muted);
+        margin: 0 0 28px;
+        line-height: 1.5;
+    }
+    fieldset {
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 16px;
+        margin-bottom: 18px;
+    }
+    legend {
+        font-weight: 600;
+        padding: 0 6px;
+    }
+    label {
+        display: block;
+        margin-bottom: 6px;
+        font-weight: 500;
+    }
+    .hint {
+        color: var(--muted);
+        font-size: 0.85rem;
+        margin: 4px 0 0;
+    }
+    .zdroj-info {
+        color: var(--muted);
+        font-size: 0.78rem;
+        margin: 10px 0 0;
+        padding-top: 8px;
+        border-top: 1px dashed var(--border);
+    }
+    .zdroj-info a {
+        color: var(--muted);
+    }
+    .zdroj-info a:hover {
+        color: var(--accent);
+    }
+    input[type="file"] {
+        width: 100%;
+        padding: 8px;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        background: #fafbfc;
+    }
+    button {
+        width: 100%;
+        padding: 12px;
+        background: var(--accent);
+        color: #fff;
+        border: none;
+        border-radius: 8px;
+        font-size: 1rem;
+        font-weight: 600;
+        cursor: pointer;
+        margin-top: 8px;
+    }
+    button:hover { background: var(--accent-hover); }
+    .file-actions {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-top: 8px;
+        font-size: 0.85rem;
+    }
+    .file-actions a {
+        color: var(--accent);
+        text-decoration: none;
+    }
+    .file-actions a:hover { text-decoration: underline; }
+    .btn-secondary {
+        width: auto;
+        margin-top: 0;
+        padding: 6px 12px;
+        font-size: 0.85rem;
+        font-weight: 500;
+        background: #eef1f6;
+        color: var(--text);
+        border: 1px solid var(--border);
+    }
+    .btn-secondary:hover { background: #e2e6ee; }
+    .flash {
+        background: var(--error-bg);
+        border: 1px solid var(--error-border);
+        color: var(--error-text);
+        padding: 12px 14px;
+        border-radius: 8px;
+        margin-bottom: 18px;
+        font-size: 0.92rem;
+        line-height: 1.4;
+    }
+    ol {
+        color: var(--muted);
+        font-size: 0.9rem;
+        padding-left: 20px;
+        line-height: 1.6;
+    }
+</style>
+</head>
+<body>
+<div class="card">
+    <h1>Rating likvidity krajů</h1>
+    <p class="lead">
+        Nahrajte statistiku zápisů vkladem, počet obyvatel podle krajů a číselník
+        katastrálních území. Aplikace dopočítá sloupec <strong>Rating likvidity</strong>
+        pro každý řádek číselníku podle kraje a nabídne výsledný soubor ke stažení.
+    </p>
+
+    {% with messages = get_flashed_messages() %}
+        {% if messages %}
+            {% for m in messages %}
+                <div class="flash">{{ m }}</div>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+
+    <form action="{{ url_for('main.vypocitat') }}" method="post" enctype="multipart/form-data">
+        <fieldset>
+            <legend>1. Statistika vkladů (XLSX)</legend>
+            <label for="statistika">Soubor musí obsahovat u každého kraje sloupec „vlastnické právo".</label>
+            <input type="file" id="statistika" name="statistika" accept=".xlsx,.xlsm" required>
+            <div class="file-actions">
+                <a href="{{ url_for('main.stahnout', klic='statistika') }}">Stáhnout z internetu (ČÚZK)</a>
+                <button type="button" class="btn-secondary" onclick="vlozitAutomaticky(this, 'statistika', 'statistika')">Vložit automaticky</button>
+            </div>
+            <p class="zdroj-info">
+                Zdroj: <a href="https://cuzk.gov.cz/Katastr-nemovitosti/Statisticke-udaje-o-transakcich/Statisticke-udaje-o-vybranych-transakcich-s-ne-(1).aspx" target="_blank" rel="noopener">přehled na webu ČÚZK</a>
+                · <a href="https://cuzk.gov.cz/Periodika-a-publikace/Statisticke-udaje/Statistiky-podle-roku/2025/statistiky-2025.aspx" target="_blank" rel="noopener">přímý odkaz (funkční k 8/2026, rok 2025)</a>
+            </p>
+        </fieldset>
+
+        <fieldset>
+            <legend>2. Počet obyvatel podle krajů (CSV nebo XLSX)</legend>
+            <label for="obyvatele">Soubor musí mít v hlavičce sloupec s názvem kraje (obsahující „kraj") a sloupec s počtem obyvatel (obsahující „obyvatel").</label>
+            <input type="file" id="obyvatele" name="obyvatele" accept=".csv,.xlsx,.xlsm" required>
+            <div class="file-actions">
+                <a href="{{ url_for('main.stahnout', klic='obyvatele') }}">Stáhnout z internetu (ČSÚ)</a>
+                <button type="button" class="btn-secondary" onclick="vlozitAutomaticky(this, 'obyvatele', 'obyvatele')">Vložit automaticky</button>
+            </div>
+            <p class="zdroj-info">
+                Zdroj: <a href="https://csu.gov.cz/regionalni-statistiky" target="_blank" rel="noopener">přehled na webu ČSÚ (tabulka „Počet obyvatel k 31.12.")</a>
+                · živé API DataStat ČSÚ — vrací vždy nejnovější dostupný rok automaticky, odkaz se nemusí ručně měnit
+            </p>
+        </fieldset>
+
+        <fieldset>
+            <legend>3. Číselník katastrálních území (CSV nebo XLSX)</legend>
+            <label for="ciselnik">Soubor musí obsahovat sloupec „KRAJ_NAZEV".</label>
+            <input type="file" id="ciselnik" name="ciselnik" accept=".csv,.xlsx,.xlsm" required>
+            <div class="file-actions">
+                <a href="{{ url_for('main.stahnout', klic='ciselnik') }}">Stáhnout z internetu (ČÚZK)</a>
+                <button type="button" class="btn-secondary" onclick="vlozitAutomaticky(this, 'ciselnik', 'ciselnik')">Vložit automaticky</button>
+            </div>
+            <p class="zdroj-info">
+                Zdroj: <a href="https://cuzk.gov.cz/Katastr-nemovitosti/Poskytovani-udaju-z-KN/Ciselniky-ISKN/Ciselniky-katastralnich-uzemi-a-pracovist-resortu.aspx" target="_blank" rel="noopener">přehled na webu ČÚZK</a>
+                · <a href="https://services.cuzk.cz/sestavy/cis/SC_SEZNAMKUKRA_DOTAZ.zip" target="_blank" rel="noopener">přímý odkaz (stabilní, vždy aktuální)</a>
+            </p>
+        </fieldset>
+
+        <fieldset>
+            <legend>4. Volitelné: existující soubor k aktualizaci (XLSX nebo CSV)</legend>
+            <label for="aktualizace">
+                Pokud máte již existující soubor se sloupci „Katastrální území" (kódy KU_KOD)
+                a „Rating likvidity", nahrajte ho zde — hodnoty v sloupci Rating likvidity se
+                aktualizují podle právě spočítaného výsledku a soubor dostanete zpět jako druhý
+                výstup (spolu s hlavním výsledkem v jednom ZIP souboru). Když sem nic nenahrajete,
+                nic se neděje a výstup zůstane jeden soubor jako obvykle.
+            </label>
+            <input type="file" id="aktualizace" name="aktualizace" accept=".csv,.xlsx,.xlsm">
+        </fieldset>
+
+        <button type="submit">Vypočítat a stáhnout výsledek</button>
+    </form>
+
+    <p class="hint" style="margin-top:24px;">Jak se rating počítá:</p>
+    <ol>
+        <li>Pro každý kraj: míra = (vlastnické právo / počet obyvatel) × 1000, zaokrouhleno dolů na 2 desetinná místa.</li>
+        <li>Celostátní míra = součet vlastnických práv všech krajů / součet obyvatel všech krajů × 1000.</li>
+        <li>Rating likvidity kraje = celostátní míra / míra kraje, zaokrouhleno dolů na 2 desetinná místa.</li>
+    </ol>
+</div>
+<script>
+const STAHNOUT_URLY = {
+    statistika: "{{ url_for('main.stahnout', klic='statistika') }}",
+    obyvatele: "{{ url_for('main.stahnout', klic='obyvatele') }}",
+    ciselnik: "{{ url_for('main.stahnout', klic='ciselnik') }}",
+};
+
+async function vlozitAutomaticky(tlacitko, poleId, klic) {
+    const puvodniText = tlacitko.textContent;
+    tlacitko.disabled = true;
+    tlacitko.textContent = "Stahuji z internetu...";
+    try {
+        const resp = await fetch(STAHNOUT_URLY[klic]);
+        if (!resp.ok) {
+            const chybaText = await resp.text();
+            throw new Error(chybaText || ("HTTP " + resp.status));
+        }
+        const blob = await resp.blob();
+        const cd = resp.headers.get("Content-Disposition") || "";
+        const shoda = cd.match(/filename="?([^";]+)"?/);
+        const nazevSouboru = shoda ? shoda[1] : (klic + ".dat");
+
+        const soubor = new File([blob], nazevSouboru, { type: blob.type });
+        const dt = new DataTransfer();
+        dt.items.add(soubor);
+        document.getElementById(poleId).files = dt.files;
+
+        tlacitko.textContent = "Vloženo ✓";
+        setTimeout(() => { tlacitko.textContent = puvodniText; tlacitko.disabled = false; }, 1500);
+    } catch (e) {
+        alert("Nepodařilo se automaticky vložit soubor: " + e.message);
+        tlacitko.textContent = puvodniText;
+        tlacitko.disabled = false;
+    }
+}
+</script>
+</body>
+</html>
