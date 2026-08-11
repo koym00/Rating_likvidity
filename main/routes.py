@@ -237,6 +237,10 @@ def normalize_ku_kod(val):
     return str(val).strip()
 
 
+def aktualni_mmyyyy():
+    return datetime.date.today().strftime("%m%Y")
+
+
 def process_csv_ciselnik(raw_bytes, ratings):
     enc = detect_encoding(raw_bytes)
     text = raw_bytes.decode(enc)
@@ -431,7 +435,7 @@ def process_aktualizace_xlsx(file_stream, ku_kod_to_rating, ku_kod_to_kraj):
     out_stream.seek(0)
     return {
         "stream": out_stream,
-        "filename": "aktualizovany_soubor.xlsx",
+        "filename": f"Katastrální_území_{aktualni_mmyyyy()}.xlsx",
         "nenaparovane": nenaparovane,
         "aktualizovano": aktualizovano,
         "bez_kategorie": bez_kategorie,
@@ -501,7 +505,7 @@ def process_aktualizace_csv(raw_bytes, ku_kod_to_rating):
     # CSV nemá pojem "hárok", kontingenční tabulku (Kontingen) tedy nelze přidat.
     return {
         "stream": out_stream,
-        "filename": "aktualizovany_soubor.csv",
+        "filename": f"Katastrální_území_{aktualni_mmyyyy()}.csv",
         "nenaparovane": nenaparovane,
         "aktualizovano": aktualizovano,
         "bez_kategorie": bez_kategorie,
@@ -657,7 +661,6 @@ def vypocitat():
     f_obyvatele = request.files.get("obyvatele")
     f_ciselnik = request.files.get("ciselnik")
     f_aktualizace = request.files.get("aktualizace")
-    ma_aktualizaci = bool(f_aktualizace and f_aktualizace.filename)
 
     if not f_statistika or f_statistika.filename == "":
         flash("Nahrajte prosím soubor se statistikou vkladů (XLSX).")
@@ -667,6 +670,9 @@ def vypocitat():
         return redirect(url_for("main.index"))
     if not f_ciselnik or f_ciselnik.filename == "":
         flash("Nahrajte prosím soubor s číselníkem katastrálních území.")
+        return redirect(url_for("main.index"))
+    if not f_aktualizace or f_aktualizace.filename == "":
+        flash("Nahrajte prosím soubor k aktualizaci (Katastrální území / Rating likvidity / Rating kategorie obce / Rating prodejnosti).")
         return redirect(url_for("main.index"))
 
     try:
@@ -683,16 +689,14 @@ def vypocitat():
     try:
         if is_xlsx:
             ciselnik_vysledek = process_xlsx_ciselnik(f_ciselnik.stream, ratings)
-            mimetype = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         else:
             ciselnik_vysledek = process_csv_ciselnik(f_ciselnik.read(), ratings)
-            mimetype = "text/csv"
     except Exception as exc:
         flash(f"Chyba při zpracování číselníku: {exc}")
         return redirect(url_for("main.index"))
-
-    out_stream = ciselnik_vysledek["stream"]
-    out_name = ciselnik_vysledek["filename"]
+    # ciselnik_vysledek["stream"] (číselník s doplněným Rating likvidity) se dál
+    # neposílá jako samostatný výstup - používá se jen jako zdroj dat (KU_KOD, kraj,
+    # rating) pro Katastrální_území_MMYYYY a Import_vystup_MMYYYY níže.
 
     if ciselnik_vysledek["nenaparovane"]:
         flash(
@@ -700,9 +704,6 @@ def vypocitat():
             "(sloupec Rating likvidity zůstal prázdný): "
             + ", ".join(sorted(ciselnik_vysledek["nenaparovane"]))
         )
-
-    if not ma_aktualizaci:
-        return send_file(out_stream, as_attachment=True, download_name=out_name, mimetype=mimetype)
 
     try:
         akt_vysledek = process_aktualizace(
@@ -734,9 +735,8 @@ def vypocitat():
 
     zip_stream = io.BytesIO()
     with zipfile.ZipFile(zip_stream, "w", zipfile.ZIP_DEFLATED) as zf:
-        zf.writestr(out_name, out_stream.getvalue())
         zf.writestr(akt_vysledek["filename"], akt_vysledek["stream"].getvalue())
-        zf.writestr("Import_vystup.xlsx", import_vystup_stream.getvalue())
+        zf.writestr(f"Import_vystup_{aktualni_mmyyyy()}.xlsx", import_vystup_stream.getvalue())
     zip_stream.seek(0)
 
     return send_file(zip_stream, as_attachment=True, download_name="vysledky.zip", mimetype="application/zip")

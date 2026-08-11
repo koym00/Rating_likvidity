@@ -143,9 +143,10 @@
 <div class="card">
     <h1>Rating likvidity krajů</h1>
     <p class="lead">
-        Nahrajte statistiku zápisů vkladem, počet obyvatel podle krajů a číselník
-        katastrálních území. Aplikace dopočítá sloupec <strong>Rating likvidity</strong>
-        pro každý řádek číselníku podle kraje a nabídne výsledný soubor ke stažení.
+        Nahrajte statistiku zápisů vkladem, počet obyvatel podle krajů, číselník
+        katastrálních území a existující soubor k aktualizaci. Aplikace dopočítá
+        <strong>Rating likvidity</strong> a <strong>Rating prodejnosti</strong> podle kraje
+        a nabídne ke stažení ZIP se dvěma aktualizovanými soubory.
     </p>
 
     {% with messages = get_flashed_messages() %}
@@ -200,22 +201,22 @@
         </fieldset>
 
         <fieldset>
-            <legend>4. Volitelné: existující soubor k aktualizaci (XLSX nebo CSV)</legend>
+            <legend>4. Existující soubor k aktualizaci (XLSX nebo CSV)</legend>
             <label for="aktualizace">
-                Pokud máte již existující soubor se sloupci „Katastrální území" (kódy KU_KOD),
-                „Rating likvidity", „Rating kategorie obce" a „Rating prodejnosti", nahrajte ho
-                zde — Rating likvidity se aktualizuje podle právě spočítaného výsledku a Rating
-                prodejnosti se dopočítá jako Rating likvidity × Rating kategorie obce (zaokrouhleno
-                na celé číslo, zapsáno jako pevná hodnota, ne vzorec). U XLSX souboru navíc přibude
-                hárok „Kontingen" — kontingenční tabulka s kraji v řádcích a hodnotami Rating
-                prodejnosti (1–5) ve sloupcích, s počtem katastrálních území v každé kombinaci
-                (kraj se dohledává podle KU_KOD v číselníku). Zároveň vznikne třetí soubor
-                „Import_vystup.xlsx" se sloupci KU_KOD, KU_NAZEV, OBEC_KOD, LRE (Rating likvidity)
-                a KOB (Rating kategorie obce) za všechna katastrální území z číselníku. Všechny
-                soubory dostanete zpět v jednom ZIP souboru. Když sem nic nenahrajete, nic se
-                neděje a výstup zůstane jeden soubor jako obvykle.
+                Soubor musí mít sloupce „Katastrální území" (kódy KU_KOD), „Rating likvidity",
+                „Rating kategorie obce" a „Rating prodejnosti" — Rating likvidity se aktualizuje
+                podle právě spočítaného výsledku a Rating prodejnosti se dopočítá jako Rating
+                likvidity × Rating kategorie obce (zaokrouhleno na celé číslo, zapsáno jako pevná
+                hodnota, ne vzorec). U XLSX souboru navíc přibude hárok „Kontingen" — kontingenční
+                tabulka s kraji v řádcích a hodnotami Rating prodejnosti (1–5) ve sloupcích, s
+                počtem katastrálních území v každé kombinaci (kraj se dohledává podle KU_KOD v
+                číselníku). Zároveň vznikne soubor „Import_vystup_MMRRRR.xlsx" se sloupci KU_KOD,
+                KU_NAZEV, OBEC_KOD, LRE (Rating likvidity) a KOB (Rating kategorie obce) za všechna
+                katastrální území z číselníku. Výstupem je ZIP se souborem
+                „Katastrální_území_MMRRRR" (tento soubor) a „Import_vystup_MMRRRR"
+                (MM/RRRR = aktuální měsíc/rok).
             </label>
-            <input type="file" id="aktualizace" name="aktualizace" accept=".csv,.xlsx,.xlsm">
+            <input type="file" id="aktualizace" name="aktualizace" accept=".csv,.xlsx,.xlsm" required>
         </fieldset>
 
         <button type="submit">Vypočítat a stáhnout výsledek</button>
