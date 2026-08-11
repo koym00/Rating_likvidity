@@ -257,6 +257,7 @@ def process_csv_ciselnik(raw_bytes, ratings):
     out_rows = [header]
     nenaparovane = set()
     ku_kod_to_rating = {}
+    ku_kod_to_kraj = {}
     for row in rows[1:]:
         if not row:
             continue
@@ -271,6 +272,7 @@ def process_csv_ciselnik(raw_bytes, ratings):
                 ku_kod = normalize_ku_kod(row[ku_kod_idx])
                 if ku_kod:
                     ku_kod_to_rating[ku_kod] = rating
+                    ku_kod_to_kraj[ku_kod] = key
         out_rows.append(row)
 
     buf = io.StringIO()
@@ -280,7 +282,7 @@ def process_csv_ciselnik(raw_bytes, ratings):
 
     out_stream = io.BytesIO(data)
     out_stream.seek(0)
-    return out_stream, "ciselnik_s_ratingem.csv", nenaparovane, ku_kod_to_rating
+    return out_stream, "ciselnik_s_ratingem.csv", nenaparovane, ku_kod_to_rating, ku_kod_to_kraj
 
 
 def process_xlsx_ciselnik(file_stream, ratings):
@@ -299,6 +301,7 @@ def process_xlsx_ciselnik(file_stream, ratings):
 
     nenaparovane = set()
     ku_kod_to_rating = {}
+    ku_kod_to_kraj = {}
     for r in range(header_row + 1, ws.max_row + 1):
         name = ws.cell(row=r, column=nazev_col).value
         if name is None:
@@ -314,14 +317,15 @@ def process_xlsx_ciselnik(file_stream, ratings):
             ku_kod = normalize_ku_kod(ws.cell(row=r, column=ku_kod_col).value)
             if ku_kod:
                 ku_kod_to_rating[ku_kod] = rating
+                ku_kod_to_kraj[ku_kod] = key
 
     out_stream = io.BytesIO()
     wb.save(out_stream)
     out_stream.seek(0)
-    return out_stream, "ciselnik_s_ratingem.xlsx", nenaparovane, ku_kod_to_rating
+    return out_stream, "ciselnik_s_ratingem.xlsx", nenaparovane, ku_kod_to_rating, ku_kod_to_kraj
 
 
-def process_aktualizace_xlsx(file_stream, ku_kod_to_rating):
+def process_aktualizace_xlsx(file_stream, ku_kod_to_rating, ku_kod_to_kraj):
     wb = openpyxl.load_workbook(file_stream)
     ws = wb.active
 
@@ -340,6 +344,8 @@ def process_aktualizace_xlsx(file_stream, ku_kod_to_rating):
     aktualizovano = 0
     nenaparovane = set()
     bez_kategorie = 0
+    mimo_rozsah = 0
+    pocty = {}  # (normalizovany kraj, prodejnost 1-5) -> pocet KU
     for r in range(header_row + 1, ws.max_row + 1):
         ku_kod = normalize_ku_kod(ws.cell(row=r, column=ku_col).value)
         if not ku_kod:
@@ -360,12 +366,31 @@ def process_aktualizace_xlsx(file_stream, ku_kod_to_rating):
             pcell = ws.cell(row=r, column=prodejnost_col, value=prodejnost)
             pcell.number_format = "0"
 
+            kraj = ku_kod_to_kraj.get(ku_kod)
+            if kraj and 1 <= prodejnost <= 5:
+                pocty[(kraj, prodejnost)] = pocty.get((kraj, prodejnost), 0) + 1
+            else:
+                mimo_rozsah += 1
+
         aktualizovano += 1
+
+    kontingen_list = "Kontingen"
+    if kontingen_list in wb.sheetnames:
+        del wb[kontingen_list]
+    ws2 = wb.create_sheet(kontingen_list)
+    ws2.cell(row=1, column=1, value="Kraj")
+    for sloupec in range(1, 6):
+        ws2.cell(row=1, column=1 + sloupec, value=sloupec)
+    for radek, kraj_display in enumerate(CANONICAL_KRAJE, start=2):
+        kraj_key = normalize_kraj(kraj_display)
+        ws2.cell(row=radek, column=1, value=kraj_display)
+        for sloupec in range(1, 6):
+            ws2.cell(row=radek, column=1 + sloupec, value=pocty.get((kraj_key, sloupec), 0))
 
     out_stream = io.BytesIO()
     wb.save(out_stream)
     out_stream.seek(0)
-    return out_stream, "aktualizovany_soubor.xlsx", nenaparovane, aktualizovano, bez_kategorie
+    return out_stream, "aktualizovany_soubor.xlsx", nenaparovane, aktualizovano, bez_kategorie, mimo_rozsah
 
 
 def process_aktualizace_csv(raw_bytes, ku_kod_to_rating):
@@ -423,13 +448,15 @@ def process_aktualizace_csv(raw_bytes, ku_kod_to_rating):
 
     out_stream = io.BytesIO(data)
     out_stream.seek(0)
-    return out_stream, "aktualizovany_soubor.csv", nenaparovane, aktualizovano, bez_kategorie
+    # CSV nemá pojem "hárok", kontingenční tabulku (Kontingen) tedy nelze přidat -
+    # mimo_rozsah vracíme jako 0, aby měl volající pořád stejný tvar návratových hodnot.
+    return out_stream, "aktualizovany_soubor.csv", nenaparovane, aktualizovano, bez_kategorie, 0
 
 
-def process_aktualizace(file_storage, ku_kod_to_rating):
+def process_aktualizace(file_storage, ku_kod_to_rating, ku_kod_to_kraj):
     filename = (file_storage.filename or "").lower()
     if filename.endswith((".xlsx", ".xlsm")):
-        return process_aktualizace_xlsx(file_storage.stream, ku_kod_to_rating)
+        return process_aktualizace_xlsx(file_storage.stream, ku_kod_to_rating, ku_kod_to_kraj)
     return process_aktualizace_csv(file_storage.read(), ku_kod_to_rating)
 
 
@@ -575,10 +602,14 @@ def vypocitat():
 
     try:
         if is_xlsx:
-            out_stream, out_name, nenaparovane, ku_kod_to_rating = process_xlsx_ciselnik(f_ciselnik.stream, ratings)
+            out_stream, out_name, nenaparovane, ku_kod_to_rating, ku_kod_to_kraj = process_xlsx_ciselnik(
+                f_ciselnik.stream, ratings
+            )
             mimetype = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         else:
-            out_stream, out_name, nenaparovane, ku_kod_to_rating = process_csv_ciselnik(f_ciselnik.read(), ratings)
+            out_stream, out_name, nenaparovane, ku_kod_to_rating, ku_kod_to_kraj = process_csv_ciselnik(
+                f_ciselnik.read(), ratings
+            )
             mimetype = "text/csv"
     except Exception as exc:
         flash(f"Chyba při zpracování číselníku: {exc}")
@@ -594,8 +625,8 @@ def vypocitat():
         return send_file(out_stream, as_attachment=True, download_name=out_name, mimetype=mimetype)
 
     try:
-        akt_stream, akt_name, akt_nenaparovane, akt_pocet, akt_bez_kategorie = process_aktualizace(
-            f_aktualizace, ku_kod_to_rating
+        akt_stream, akt_name, akt_nenaparovane, akt_pocet, akt_bez_kategorie, akt_mimo_rozsah = process_aktualizace(
+            f_aktualizace, ku_kod_to_rating, ku_kod_to_kraj
         )
     except Exception as exc:
         flash(f"Chyba při zpracování souboru k aktualizaci: {exc}")
@@ -606,6 +637,11 @@ def vypocitat():
             f"V souboru k aktualizaci se u {len(akt_nenaparovane)} katastrálních území "
             "nepodařilo najít odpovídající KU_KOD v číselníku, jejich Rating likvidity "
             "ani Rating prodejnosti zůstaly beze změny."
+        )
+    if akt_mimo_rozsah:
+        flash(
+            f"U {akt_mimo_rozsah} řádků vyšel Rating prodejnosti mimo rozsah 1-5, "
+            "do kontingenční tabulky (hárok Kontingen) se nezapočítaly."
         )
     if akt_bez_kategorie:
         flash(
