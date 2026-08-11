@@ -209,9 +209,11 @@
                 na celé číslo, zapsáno jako pevná hodnota, ne vzorec). U XLSX souboru navíc přibude
                 hárok „Kontingen" — kontingenční tabulka s kraji v řádcích a hodnotami Rating
                 prodejnosti (1–5) ve sloupcích, s počtem katastrálních území v každé kombinaci
-                (kraj se dohledává podle KU_KOD v číselníku). Soubor dostanete zpět jako druhý
-                výstup (spolu s hlavním výsledkem v jednom ZIP souboru). Když sem nic nenahrajete,
-                nic se neděje a výstup zůstane jeden soubor jako obvykle.
+                (kraj se dohledává podle KU_KOD v číselníku). Zároveň vznikne třetí soubor
+                „Import_vystup.xlsx" se sloupci KU_KOD, KU_NAZEV, OBEC_KOD, LRE (Rating likvidity)
+                a KOB (Rating kategorie obce) za všechna katastrální území z číselníku. Všechny
+                soubory dostanete zpět v jednom ZIP souboru. Když sem nic nenahrajete, nic se
+                neděje a výstup zůstane jeden soubor jako obvykle.
             </label>
             <input type="file" id="aktualizace" name="aktualizace" accept=".csv,.xlsx,.xlsm">
         </fieldset>
