@@ -329,15 +329,17 @@ def process_aktualizace_xlsx(file_stream, ku_kod_to_rating):
     header_vals = [
         normalize_header(ws.cell(row=header_row, column=c).value) for c in range(1, ws.max_column + 1)
     ]
-    if "Katastrální území" not in header_vals:
-        raise ValueError("Soubor k aktualizaci neobsahuje sloupec 'Katastrální území'.")
-    if "Rating likvidity" not in header_vals:
-        raise ValueError("Soubor k aktualizaci neobsahuje sloupec 'Rating likvidity'.")
+    for nazev in ("Katastrální území", "Rating likvidity", "Rating kategorie obce", "Rating prodejnosti"):
+        if nazev not in header_vals:
+            raise ValueError(f"Soubor k aktualizaci neobsahuje sloupec '{nazev}'.")
     ku_col = header_vals.index("Katastrální území") + 1
     rating_col = header_vals.index("Rating likvidity") + 1
+    kategorie_col = header_vals.index("Rating kategorie obce") + 1
+    prodejnost_col = header_vals.index("Rating prodejnosti") + 1
 
     aktualizovano = 0
     nenaparovane = set()
+    bez_kategorie = 0
     for r in range(header_row + 1, ws.max_row + 1):
         ku_kod = normalize_ku_kod(ws.cell(row=r, column=ku_col).value)
         if not ku_kod:
@@ -348,12 +350,22 @@ def process_aktualizace_xlsx(file_stream, ku_kod_to_rating):
             continue
         cell = ws.cell(row=r, column=rating_col, value=rating)
         cell.number_format = "0.00"
+
+        kategorie = ws.cell(row=r, column=kategorie_col).value
+        try:
+            prodejnost = round(rating * float(kategorie))
+        except (TypeError, ValueError):
+            bez_kategorie += 1
+        else:
+            pcell = ws.cell(row=r, column=prodejnost_col, value=prodejnost)
+            pcell.number_format = "0"
+
         aktualizovano += 1
 
     out_stream = io.BytesIO()
     wb.save(out_stream)
     out_stream.seek(0)
-    return out_stream, "aktualizovany_soubor.xlsx", nenaparovane, aktualizovano
+    return out_stream, "aktualizovany_soubor.xlsx", nenaparovane, aktualizovano, bez_kategorie
 
 
 def process_aktualizace_csv(raw_bytes, ku_kod_to_rating):
@@ -366,15 +378,17 @@ def process_aktualizace_csv(raw_bytes, ku_kod_to_rating):
         raise ValueError("Soubor k aktualizaci je prázdný.")
 
     header = [normalize_header(h) for h in rows[0]]
-    if "Katastrální území" not in header:
-        raise ValueError("Soubor k aktualizaci neobsahuje sloupec 'Katastrální území'.")
-    if "Rating likvidity" not in header:
-        raise ValueError("Soubor k aktualizaci neobsahuje sloupec 'Rating likvidity'.")
+    for nazev in ("Katastrální území", "Rating likvidity", "Rating kategorie obce", "Rating prodejnosti"):
+        if nazev not in header:
+            raise ValueError(f"Soubor k aktualizaci neobsahuje sloupec '{nazev}'.")
     ku_idx = header.index("Katastrální území")
     rating_idx = header.index("Rating likvidity")
+    kategorie_idx = header.index("Rating kategorie obce")
+    prodejnost_idx = header.index("Rating prodejnosti")
 
     aktualizovano = 0
     nenaparovane = set()
+    bez_kategorie = 0
     out_rows = [header]
     for row in rows[1:]:
         if not row:
@@ -385,9 +399,20 @@ def process_aktualizace_csv(raw_bytes, ku_kod_to_rating):
             if rating is None:
                 nenaparovane.add(ku_kod)
             else:
-                while len(row) <= rating_idx:
+                max_idx = max(rating_idx, prodejnost_idx)
+                while len(row) <= max_idx:
                     row.append("")
                 row[rating_idx] = str(rating).replace(".", ",")
+
+                kategorie_raw = row[kategorie_idx] if kategorie_idx < len(row) else ""
+                try:
+                    kategorie_num = float(str(kategorie_raw).replace(",", "."))
+                    prodejnost = round(rating * kategorie_num)
+                except (TypeError, ValueError):
+                    bez_kategorie += 1
+                else:
+                    row[prodejnost_idx] = str(prodejnost)
+
                 aktualizovano += 1
         out_rows.append(row)
 
@@ -398,7 +423,7 @@ def process_aktualizace_csv(raw_bytes, ku_kod_to_rating):
 
     out_stream = io.BytesIO(data)
     out_stream.seek(0)
-    return out_stream, "aktualizovany_soubor.csv", nenaparovane, aktualizovano
+    return out_stream, "aktualizovany_soubor.csv", nenaparovane, aktualizovano, bez_kategorie
 
 
 def process_aktualizace(file_storage, ku_kod_to_rating):
@@ -569,7 +594,9 @@ def vypocitat():
         return send_file(out_stream, as_attachment=True, download_name=out_name, mimetype=mimetype)
 
     try:
-        akt_stream, akt_name, akt_nenaparovane, akt_pocet = process_aktualizace(f_aktualizace, ku_kod_to_rating)
+        akt_stream, akt_name, akt_nenaparovane, akt_pocet, akt_bez_kategorie = process_aktualizace(
+            f_aktualizace, ku_kod_to_rating
+        )
     except Exception as exc:
         flash(f"Chyba při zpracování souboru k aktualizaci: {exc}")
         return redirect(url_for("main.index"))
@@ -578,7 +605,12 @@ def vypocitat():
         flash(
             f"V souboru k aktualizaci se u {len(akt_nenaparovane)} katastrálních území "
             "nepodařilo najít odpovídající KU_KOD v číselníku, jejich Rating likvidity "
-            "zůstal beze změny."
+            "ani Rating prodejnosti zůstaly beze změny."
+        )
+    if akt_bez_kategorie:
+        flash(
+            f"U {akt_bez_kategorie} řádků chyběla nebo byla neplatná hodnota "
+            "'Rating kategorie obce', Rating prodejnosti se tam nedopočítal."
         )
     flash(f"V souboru k aktualizaci bylo aktualizováno {akt_pocet} řádků.")
 
