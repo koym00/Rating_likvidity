@@ -202,11 +202,13 @@
         <fieldset>
             <legend>4. Volitelné: existující soubor k aktualizaci (XLSX nebo CSV)</legend>
             <label for="aktualizace">
-                Pokud máte již existující soubor se sloupci „Katastrální území" (kódy KU_KOD)
-                a „Rating likvidity", nahrajte ho zde — hodnoty v sloupci Rating likvidity se
-                aktualizují podle právě spočítaného výsledku a soubor dostanete zpět jako druhý
-                výstup (spolu s hlavním výsledkem v jednom ZIP souboru). Když sem nic nenahrajete,
-                nic se neděje a výstup zůstane jeden soubor jako obvykle.
+                Pokud máte již existující soubor se sloupci „Katastrální území" (kódy KU_KOD),
+                „Rating likvidity", „Rating kategorie obce" a „Rating prodejnosti", nahrajte ho
+                zde — Rating likvidity se aktualizuje podle právě spočítaného výsledku a Rating
+                prodejnosti se dopočítá jako Rating likvidity × Rating kategorie obce (zaokrouhleno
+                na celé číslo, zapsáno jako pevná hodnota, ne vzorec). Soubor dostanete zpět jako
+                druhý výstup (spolu s hlavním výsledkem v jednom ZIP souboru). Když sem nic
+                nenahrajete, nic se neděje a výstup zůstane jeden soubor jako obvykle.
             </label>
             <input type="file" id="aktualizace" name="aktualizace" accept=".csv,.xlsx,.xlsm">
         </fieldset>
