@@ -2,6 +2,7 @@ import csv
 import datetime
 import io
 import math
+import re
 import unicodedata
 import zipfile
 
@@ -44,6 +45,14 @@ def normalize_kraj(name):
     name = str(name).replace("Kraj ", "").replace(" kraj", "").strip()
     name = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode("ascii")
     return name.lower()
+
+
+def normalize_header(val):
+    """Sjednotí zalomení řádků (Alt+Enter v Excelu) a vícenásobné mezery v hlavičce
+    na jednu mezeru, aby se sloupec našel i když je název rozdělen na víc řádků."""
+    if val is None:
+        return ""
+    return re.sub(r"\s+", " ", str(val)).strip()
 
 
 def parse_statistika(file_stream):
@@ -317,7 +326,9 @@ def process_aktualizace_xlsx(file_stream, ku_kod_to_rating):
     ws = wb.active
 
     header_row = 1
-    header_vals = [ws.cell(row=header_row, column=c).value for c in range(1, ws.max_column + 1)]
+    header_vals = [
+        normalize_header(ws.cell(row=header_row, column=c).value) for c in range(1, ws.max_column + 1)
+    ]
     if "Katastrální území" not in header_vals:
         raise ValueError("Soubor k aktualizaci neobsahuje sloupec 'Katastrální území'.")
     if "Rating likvidity" not in header_vals:
@@ -354,7 +365,7 @@ def process_aktualizace_csv(raw_bytes, ku_kod_to_rating):
     if not rows:
         raise ValueError("Soubor k aktualizaci je prázdný.")
 
-    header = rows[0]
+    header = [normalize_header(h) for h in rows[0]]
     if "Katastrální území" not in header:
         raise ValueError("Soubor k aktualizaci neobsahuje sloupec 'Katastrální území'.")
     if "Rating likvidity" not in header:
