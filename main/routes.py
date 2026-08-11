@@ -252,27 +252,38 @@ def process_csv_ciselnik(raw_bytes, ratings):
         raise ValueError("Číselník neobsahuje sloupec 'KRAJ_NAZEV', podle kterého se páruje kraj.")
     nazev_idx = header.index("KRAJ_NAZEV")
     ku_kod_idx = header.index("KU_KOD") if "KU_KOD" in header else None
+    ku_nazev_idx = header.index("KU_NAZEV") if "KU_NAZEV" in header else None
+    obec_kod_idx = header.index("OBEC_KOD") if "OBEC_KOD" in header else None
 
     header = header + ["Rating likvidity"]
     out_rows = [header]
     nenaparovane = set()
     ku_kod_to_rating = {}
     ku_kod_to_kraj = {}
+    import_radky = []
     for row in rows[1:]:
         if not row:
             continue
         key = normalize_kraj(row[nazev_idx]) if nazev_idx < len(row) else ""
         rating = ratings.get(key)
+
+        ku_kod = None
+        if ku_kod_idx is not None and ku_kod_idx < len(row):
+            ku_kod = normalize_ku_kod(row[ku_kod_idx])
+        ku_nazev = row[ku_nazev_idx] if ku_nazev_idx is not None and ku_nazev_idx < len(row) else None
+        obec_kod = row[obec_kod_idx] if obec_kod_idx is not None and obec_kod_idx < len(row) else None
+
         if rating is None:
             nenaparovane.add(row[nazev_idx] if nazev_idx < len(row) else "?")
             row = row + [""]
+            if ku_kod:
+                import_radky.append((ku_kod, ku_nazev, obec_kod, None))
         else:
             row = row + [str(rating).replace(".", ",")]
-            if ku_kod_idx is not None and ku_kod_idx < len(row):
-                ku_kod = normalize_ku_kod(row[ku_kod_idx])
-                if ku_kod:
-                    ku_kod_to_rating[ku_kod] = rating
-                    ku_kod_to_kraj[ku_kod] = key
+            if ku_kod:
+                ku_kod_to_rating[ku_kod] = rating
+                ku_kod_to_kraj[ku_kod] = key
+                import_radky.append((ku_kod, ku_nazev, obec_kod, rating))
         out_rows.append(row)
 
     buf = io.StringIO()
@@ -282,7 +293,14 @@ def process_csv_ciselnik(raw_bytes, ratings):
 
     out_stream = io.BytesIO(data)
     out_stream.seek(0)
-    return out_stream, "ciselnik_s_ratingem.csv", nenaparovane, ku_kod_to_rating, ku_kod_to_kraj
+    return {
+        "stream": out_stream,
+        "filename": "ciselnik_s_ratingem.csv",
+        "nenaparovane": nenaparovane,
+        "ku_kod_to_rating": ku_kod_to_rating,
+        "ku_kod_to_kraj": ku_kod_to_kraj,
+        "import_radky": import_radky,
+    }
 
 
 def process_xlsx_ciselnik(file_stream, ratings):
@@ -295,6 +313,8 @@ def process_xlsx_ciselnik(file_stream, ratings):
         raise ValueError("Číselník neobsahuje sloupec 'KRAJ_NAZEV', podle kterého se páruje kraj.")
     nazev_col = header_vals.index("KRAJ_NAZEV") + 1
     ku_kod_col = header_vals.index("KU_KOD") + 1 if "KU_KOD" in header_vals else None
+    ku_nazev_col = header_vals.index("KU_NAZEV") + 1 if "KU_NAZEV" in header_vals else None
+    obec_kod_col = header_vals.index("OBEC_KOD") + 1 if "OBEC_KOD" in header_vals else None
 
     new_col = ws.max_column + 1
     ws.cell(row=header_row, column=new_col, value="Rating likvidity")
@@ -302,27 +322,42 @@ def process_xlsx_ciselnik(file_stream, ratings):
     nenaparovane = set()
     ku_kod_to_rating = {}
     ku_kod_to_kraj = {}
+    import_radky = []
     for r in range(header_row + 1, ws.max_row + 1):
         name = ws.cell(row=r, column=nazev_col).value
         if name is None:
             continue
         key = normalize_kraj(name)
         rating = ratings.get(key)
+
+        ku_kod = normalize_ku_kod(ws.cell(row=r, column=ku_kod_col).value) if ku_kod_col else None
+        ku_nazev = ws.cell(row=r, column=ku_nazev_col).value if ku_nazev_col else None
+        obec_kod = ws.cell(row=r, column=obec_kod_col).value if obec_kod_col else None
+
         if rating is None:
             nenaparovane.add(name)
+            if ku_kod:
+                import_radky.append((ku_kod, ku_nazev, obec_kod, None))
             continue
+
         cell = ws.cell(row=r, column=new_col, value=rating)
         cell.number_format = "0.00"
-        if ku_kod_col is not None:
-            ku_kod = normalize_ku_kod(ws.cell(row=r, column=ku_kod_col).value)
-            if ku_kod:
-                ku_kod_to_rating[ku_kod] = rating
-                ku_kod_to_kraj[ku_kod] = key
+        if ku_kod:
+            ku_kod_to_rating[ku_kod] = rating
+            ku_kod_to_kraj[ku_kod] = key
+            import_radky.append((ku_kod, ku_nazev, obec_kod, rating))
 
     out_stream = io.BytesIO()
     wb.save(out_stream)
     out_stream.seek(0)
-    return out_stream, "ciselnik_s_ratingem.xlsx", nenaparovane, ku_kod_to_rating, ku_kod_to_kraj
+    return {
+        "stream": out_stream,
+        "filename": "ciselnik_s_ratingem.xlsx",
+        "nenaparovane": nenaparovane,
+        "ku_kod_to_rating": ku_kod_to_rating,
+        "ku_kod_to_kraj": ku_kod_to_kraj,
+        "import_radky": import_radky,
+    }
 
 
 def process_aktualizace_xlsx(file_stream, ku_kod_to_rating, ku_kod_to_kraj):
@@ -346,10 +381,15 @@ def process_aktualizace_xlsx(file_stream, ku_kod_to_rating, ku_kod_to_kraj):
     bez_kategorie = 0
     mimo_rozsah = 0
     pocty = {}  # (normalizovany kraj, prodejnost 1-5) -> pocet KU
+    ku_kod_to_kob = {}  # KU_KOD -> raw hodnota "Rating kategorie obce" (pro Import_vystup)
     for r in range(header_row + 1, ws.max_row + 1):
         ku_kod = normalize_ku_kod(ws.cell(row=r, column=ku_col).value)
         if not ku_kod:
             continue
+
+        kategorie = ws.cell(row=r, column=kategorie_col).value
+        ku_kod_to_kob[ku_kod] = kategorie
+
         rating = ku_kod_to_rating.get(ku_kod)
         if rating is None:
             nenaparovane.add(ku_kod)
@@ -357,7 +397,6 @@ def process_aktualizace_xlsx(file_stream, ku_kod_to_rating, ku_kod_to_kraj):
         cell = ws.cell(row=r, column=rating_col, value=rating)
         cell.number_format = "0.00"
 
-        kategorie = ws.cell(row=r, column=kategorie_col).value
         try:
             prodejnost = round(rating * float(kategorie))
         except (TypeError, ValueError):
@@ -390,7 +429,15 @@ def process_aktualizace_xlsx(file_stream, ku_kod_to_rating, ku_kod_to_kraj):
     out_stream = io.BytesIO()
     wb.save(out_stream)
     out_stream.seek(0)
-    return out_stream, "aktualizovany_soubor.xlsx", nenaparovane, aktualizovano, bez_kategorie, mimo_rozsah
+    return {
+        "stream": out_stream,
+        "filename": "aktualizovany_soubor.xlsx",
+        "nenaparovane": nenaparovane,
+        "aktualizovano": aktualizovano,
+        "bez_kategorie": bez_kategorie,
+        "mimo_rozsah": mimo_rozsah,
+        "ku_kod_to_kob": ku_kod_to_kob,
+    }
 
 
 def process_aktualizace_csv(raw_bytes, ku_kod_to_rating):
@@ -414,12 +461,16 @@ def process_aktualizace_csv(raw_bytes, ku_kod_to_rating):
     aktualizovano = 0
     nenaparovane = set()
     bez_kategorie = 0
+    ku_kod_to_kob = {}  # KU_KOD -> raw hodnota "Rating kategorie obce" (pro Import_vystup)
     out_rows = [header]
     for row in rows[1:]:
         if not row:
             continue
         ku_kod = normalize_ku_kod(row[ku_idx]) if ku_idx < len(row) else None
         if ku_kod:
+            kategorie_raw = row[kategorie_idx] if kategorie_idx < len(row) else ""
+            ku_kod_to_kob[ku_kod] = kategorie_raw
+
             rating = ku_kod_to_rating.get(ku_kod)
             if rating is None:
                 nenaparovane.add(ku_kod)
@@ -429,7 +480,6 @@ def process_aktualizace_csv(raw_bytes, ku_kod_to_rating):
                     row.append("")
                 row[rating_idx] = str(rating).replace(".", ",")
 
-                kategorie_raw = row[kategorie_idx] if kategorie_idx < len(row) else ""
                 try:
                     kategorie_num = float(str(kategorie_raw).replace(",", "."))
                     prodejnost = round(rating * kategorie_num)
@@ -448,9 +498,16 @@ def process_aktualizace_csv(raw_bytes, ku_kod_to_rating):
 
     out_stream = io.BytesIO(data)
     out_stream.seek(0)
-    # CSV nemá pojem "hárok", kontingenční tabulku (Kontingen) tedy nelze přidat -
-    # mimo_rozsah vracíme jako 0, aby měl volající pořád stejný tvar návratových hodnot.
-    return out_stream, "aktualizovany_soubor.csv", nenaparovane, aktualizovano, bez_kategorie, 0
+    # CSV nemá pojem "hárok", kontingenční tabulku (Kontingen) tedy nelze přidat.
+    return {
+        "stream": out_stream,
+        "filename": "aktualizovany_soubor.csv",
+        "nenaparovane": nenaparovane,
+        "aktualizovano": aktualizovano,
+        "bez_kategorie": bez_kategorie,
+        "mimo_rozsah": 0,
+        "ku_kod_to_kob": ku_kod_to_kob,
+    }
 
 
 def process_aktualizace(file_storage, ku_kod_to_rating, ku_kod_to_kraj):
@@ -458,6 +515,29 @@ def process_aktualizace(file_storage, ku_kod_to_rating, ku_kod_to_kraj):
     if filename.endswith((".xlsx", ".xlsm")):
         return process_aktualizace_xlsx(file_storage.stream, ku_kod_to_rating, ku_kod_to_kraj)
     return process_aktualizace_csv(file_storage.read(), ku_kod_to_rating)
+
+
+def build_import_vystup(import_radky, ku_kod_to_kob):
+    """Postaví nový samostatný soubor Import_vystup.xlsx: KU_KOD, KU_NAZEV, OBEC_KOD
+    (vše z číselníku, všechny řádky), LRE (Rating likvidity z číselníku) a KOB
+    (Rating kategorie obce ze souboru k aktualizaci, spárováno přes KU_KOD)."""
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Import_vystup"
+    ws.append(["KU_KOD", "KU_NAZEV", "OBEC_KOD", "LRE", "KOB"])
+    for ku_kod, ku_nazev, obec_kod, lre in import_radky:
+        kob = ku_kod_to_kob.get(ku_kod)
+        ws.append([
+            ku_kod,
+            ku_nazev,
+            obec_kod,
+            lre if lre is not None else "",
+            kob if kob is not None else "",
+        ])
+    out_stream = io.BytesIO()
+    wb.save(out_stream)
+    out_stream.seek(0)
+    return out_stream
 
 
 @bp_main.route("/", methods=["GET"])
@@ -602,58 +682,61 @@ def vypocitat():
 
     try:
         if is_xlsx:
-            out_stream, out_name, nenaparovane, ku_kod_to_rating, ku_kod_to_kraj = process_xlsx_ciselnik(
-                f_ciselnik.stream, ratings
-            )
+            ciselnik_vysledek = process_xlsx_ciselnik(f_ciselnik.stream, ratings)
             mimetype = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         else:
-            out_stream, out_name, nenaparovane, ku_kod_to_rating, ku_kod_to_kraj = process_csv_ciselnik(
-                f_ciselnik.read(), ratings
-            )
+            ciselnik_vysledek = process_csv_ciselnik(f_ciselnik.read(), ratings)
             mimetype = "text/csv"
     except Exception as exc:
         flash(f"Chyba při zpracování číselníku: {exc}")
         return redirect(url_for("main.index"))
 
-    if nenaparovane:
+    out_stream = ciselnik_vysledek["stream"]
+    out_name = ciselnik_vysledek["filename"]
+
+    if ciselnik_vysledek["nenaparovane"]:
         flash(
             "Pozor, tyto kraje z číselníku se nepodařilo napárovat na statistiku "
-            "(sloupec Rating likvidity zůstal prázdný): " + ", ".join(sorted(nenaparovane))
+            "(sloupec Rating likvidity zůstal prázdný): "
+            + ", ".join(sorted(ciselnik_vysledek["nenaparovane"]))
         )
 
     if not ma_aktualizaci:
         return send_file(out_stream, as_attachment=True, download_name=out_name, mimetype=mimetype)
 
     try:
-        akt_stream, akt_name, akt_nenaparovane, akt_pocet, akt_bez_kategorie, akt_mimo_rozsah = process_aktualizace(
-            f_aktualizace, ku_kod_to_rating, ku_kod_to_kraj
+        akt_vysledek = process_aktualizace(
+            f_aktualizace, ciselnik_vysledek["ku_kod_to_rating"], ciselnik_vysledek["ku_kod_to_kraj"]
         )
     except Exception as exc:
         flash(f"Chyba při zpracování souboru k aktualizaci: {exc}")
         return redirect(url_for("main.index"))
 
-    if akt_nenaparovane:
+    if akt_vysledek["nenaparovane"]:
         flash(
-            f"V souboru k aktualizaci se u {len(akt_nenaparovane)} katastrálních území "
+            f"V souboru k aktualizaci se u {len(akt_vysledek['nenaparovane'])} katastrálních území "
             "nepodařilo najít odpovídající KU_KOD v číselníku, jejich Rating likvidity "
             "ani Rating prodejnosti zůstaly beze změny."
         )
-    if akt_mimo_rozsah:
+    if akt_vysledek["mimo_rozsah"]:
         flash(
-            f"U {akt_mimo_rozsah} řádků vyšel Rating prodejnosti mimo rozsah 1-5, "
+            f"U {akt_vysledek['mimo_rozsah']} řádků vyšel Rating prodejnosti mimo rozsah 1-5, "
             "do kontingenční tabulky (hárok Kontingen) se nezapočítaly."
         )
-    if akt_bez_kategorie:
+    if akt_vysledek["bez_kategorie"]:
         flash(
-            f"U {akt_bez_kategorie} řádků chyběla nebo byla neplatná hodnota "
+            f"U {akt_vysledek['bez_kategorie']} řádků chyběla nebo byla neplatná hodnota "
             "'Rating kategorie obce', Rating prodejnosti se tam nedopočítal."
         )
-    flash(f"V souboru k aktualizaci bylo aktualizováno {akt_pocet} řádků.")
+    flash(f"V souboru k aktualizaci bylo aktualizováno {akt_vysledek['aktualizovano']} řádků.")
+
+    import_vystup_stream = build_import_vystup(ciselnik_vysledek["import_radky"], akt_vysledek["ku_kod_to_kob"])
 
     zip_stream = io.BytesIO()
     with zipfile.ZipFile(zip_stream, "w", zipfile.ZIP_DEFLATED) as zf:
         zf.writestr(out_name, out_stream.getvalue())
-        zf.writestr(akt_name, akt_stream.getvalue())
+        zf.writestr(akt_vysledek["filename"], akt_vysledek["stream"].getvalue())
+        zf.writestr("Import_vystup.xlsx", import_vystup_stream.getvalue())
     zip_stream.seek(0)
 
     return send_file(zip_stream, as_attachment=True, download_name="vysledky.zip", mimetype="application/zip")
