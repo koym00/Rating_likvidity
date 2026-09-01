@@ -218,6 +218,7 @@ def compute_ratings(kraje, population):
         total_row["P"] = sum_p
 
     ratings = {}
+    kraj_prehled = []
     for k in regiony + ([total_row] if total_row is not None else []):
         if not k["P"]:
             continue
@@ -226,7 +227,11 @@ def compute_ratings(kraje, population):
             continue
         rating = math.floor((narodni_mira / mira_kraje) * 100) / 100
         ratings[normalize_kraj(k["name"])] = rating
-    return ratings
+        if not k["is_total"]:
+            kraj_prehled.append(
+                {"name": k["name"], "D": k["D"], "P": k["P"], "mira": mira_kraje, "rating": rating}
+            )
+    return ratings, kraj_prehled
 
 
 def normalize_ku_kod(val):
@@ -544,6 +549,23 @@ def build_import_vystup(import_radky, ku_kod_to_kob):
     return out_stream
 
 
+def build_kraj_prehled_xlsx(kraj_prehled):
+    """Postaví samostatný soubor s přehledem Rating likvidity za jednotlivé kraje:
+    Kraj, Počet řízení, Počet obyvatel, Počet řízení/Počet obyvatel*1000, Rating likvidity."""
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Rating likvidity"
+    ws.append(["Kraj", "Počet řízení", "Počet obyvatel", "Počet řízení na 1000 obyvatel", "Rating likvidity"])
+    for row in kraj_prehled:
+        ws.append([row["name"], row["D"], row["P"], row["mira"], row["rating"]])
+        ws.cell(row=ws.max_row, column=4).number_format = "0.00"
+        ws.cell(row=ws.max_row, column=5).number_format = "0.00"
+    out_stream = io.BytesIO()
+    wb.save(out_stream)
+    out_stream.seek(0)
+    return out_stream
+
+
 @bp_main.route("/", methods=["GET"])
 def index():
     return render_template("index.html")
@@ -678,7 +700,7 @@ def vypocitat():
     try:
         kraje = parse_statistika(f_statistika.stream)
         population = parse_obyvatele(f_obyvatele)
-        ratings = compute_ratings(kraje, population)
+        ratings, kraj_prehled = compute_ratings(kraje, population)
     except Exception as exc:
         flash(f"Chyba při zpracování souboru se statistikou nebo počtu obyvatel: {exc}")
         return redirect(url_for("main.index"))
@@ -732,11 +754,13 @@ def vypocitat():
     flash(f"V souboru k aktualizaci bylo aktualizováno {akt_vysledek['aktualizovano']} řádků.")
 
     import_vystup_stream = build_import_vystup(ciselnik_vysledek["import_radky"], akt_vysledek["ku_kod_to_kob"])
+    kraj_prehled_stream = build_kraj_prehled_xlsx(kraj_prehled)
 
     zip_stream = io.BytesIO()
     with zipfile.ZipFile(zip_stream, "w", zipfile.ZIP_DEFLATED) as zf:
         zf.writestr(akt_vysledek["filename"], akt_vysledek["stream"].getvalue())
         zf.writestr(f"Import_vystup_{aktualni_mmyyyy()}.xlsx", import_vystup_stream.getvalue())
+        zf.writestr(f"Rating_likvidity_kraje_{aktualni_mmyyyy()}.xlsx", kraj_prehled_stream.getvalue())
     zip_stream.seek(0)
 
     return send_file(zip_stream, as_attachment=True, download_name="vysledky.zip", mimetype="application/zip")

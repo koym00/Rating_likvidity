@@ -212,9 +212,11 @@
                 počtem katastrálních území v každé kombinaci (kraj se dohledává podle KU_KOD v
                 číselníku). Zároveň vznikne soubor „Import_vystup_MMRRRR.xlsx" se sloupci KU_KOD,
                 KU_NAZEV, OBEC_KOD, LRE (Rating likvidity) a KOB (Rating kategorie obce) za všechna
-                katastrální území z číselníku. Výstupem je ZIP se souborem
-                „Katastrální_území_MMRRRR" (tento soubor) a „Import_vystup_MMRRRR"
-                (MM/RRRR = aktuální měsíc/rok).
+                katastrální území z číselníku, a soubor „Rating_likvidity_kraje_MMRRRR.xlsx" s
+                přehledem za jednotlivé kraje (Kraj, Počet řízení, Počet obyvatel, Počet řízení
+                na 1000 obyvatel, Rating likvidity). Výstupem je ZIP se souborem
+                „Katastrální_území_MMRRRR" (tento soubor), „Import_vystup_MMRRRR" a
+                „Rating_likvidity_kraje_MMRRRR" (MM/RRRR = aktuální měsíc/rok).
             </label>
             <input type="file" id="aktualizace" name="aktualizace" accept=".csv,.xlsx,.xlsm" required>
         </fieldset>
